@@ -78,3 +78,23 @@ import os
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+@app.route("/timezone-all")
+def timezone_all():
+    with sqlite3.connect(DB) as conn:
+        rows = conn.execute(
+            "SELECT username, timezone FROM timezones ORDER BY username ASC"
+        ).fetchall()
+
+    if not rows:
+        return "No users have set a timezone yet."
+
+    output = []
+    for user, tz in rows:
+        try:
+            now = datetime.now(ZoneInfo(tz)).strftime("%H:%M")
+            output.append(f"{user}: {tz} ({now})")
+        except:
+            output.append(f"{user}: {tz}")
+
+    return " | ".join(output)
