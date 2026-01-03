@@ -33,7 +33,8 @@ def set_timezone():
         return "Usage: !timezoneset Europe/London"
 
     if not valid_timezone(tz):
-        return f"{user}, invalid timezone. Use Europe/London format."
+        return f"{user}, invalid timezone. Example: Europe/London or America/New_York"
+
 
     with sqlite3.connect(DB) as conn:
         conn.execute(
@@ -98,3 +99,4 @@ def timezone_all():
             output.append(f"{user}: {tz}")
 
     return " | ".join(output)
+
