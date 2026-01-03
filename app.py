@@ -1,21 +1,17 @@
 from flask import Flask, request
 from zoneinfo import ZoneInfo
 from datetime import datetime
-import sqlite3
+from urllib.parse import unquote
+import psycopg2
+import os
 
 app = Flask(__name__)
-DB = "database.db"
 
-def init_db():
-    with sqlite3.connect(DB) as conn:
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS timezones (
-            username TEXT PRIMARY KEY,
-            timezone TEXT
-        )
-        """)
+# Supabase connection string from Render Environment Variables
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-init_db()
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
 def valid_timezone(tz):
     try:
@@ -24,35 +20,49 @@ def valid_timezone(tz):
     except:
         return False
 
+
+@app.route("/")
+def home():
+    return "Timezone bot running"
+
+
 @app.route("/set-timezone")
 def set_timezone():
     user = request.args.get("user", "").lower()
-    tz = request.args.get("tz", "")
+    tz = unquote(request.args.get("tz", "")).strip()
 
     if not user or not tz:
-        return "Usage: !timezoneset Europe/London"
+        return "Usage: !tzset Europe/London"
 
     if not valid_timezone(tz):
         return f"{user}, invalid timezone. Example: Europe/London or America/New_York"
 
-
-    with sqlite3.connect(DB) as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO timezones (username, timezone) VALUES (?, ?)",
-            (user, tz)
-        )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO timezones (username, timezone)
+                VALUES (%s, %s)
+                ON CONFLICT (username)
+                DO UPDATE SET timezone = EXCLUDED.timezone
+                """,
+                (user, tz)
+            )
 
     return f"{user}, your timezone ({tz}) has been saved ✅"
+
 
 @app.route("/get-timezone")
 def get_timezone():
     user = request.args.get("user", "").lower()
 
-    with sqlite3.connect(DB) as conn:
-        row = conn.execute(
-            "SELECT timezone FROM timezones WHERE username = ?",
-            (user,)
-        ).fetchone()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT timezone FROM timezones WHERE username = %s",
+                (user,)
+            )
+            row = cur.fetchone()
 
     if not row:
         return f"{user} has not set a timezone."
@@ -62,30 +72,29 @@ def get_timezone():
 
     return f"The local time for {user} ({tz}) is {now} ⏰"
 
+
 @app.route("/clear-timezone")
 def clear_timezone():
     user = request.args.get("user", "").lower()
 
-    with sqlite3.connect(DB) as conn:
-        conn.execute("DELETE FROM timezones WHERE username = ?", (user,))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM timezones WHERE username = %s",
+                (user,)
+            )
 
     return f"{user}, your timezone has been cleared 🗑️"
 
-@app.route("/")
-def home():
-    return "Timezone bot running"
-
-import os
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 @app.route("/timezone-all")
 def timezone_all():
-    with sqlite3.connect(DB) as conn:
-        rows = conn.execute(
-            "SELECT username, timezone FROM timezones ORDER BY username ASC"
-        ).fetchall()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT username, timezone FROM timezones ORDER BY username"
+            )
+            rows = cur.fetchall()
 
     if not rows:
         return "No users have set a timezone yet."
@@ -100,3 +109,6 @@ def timezone_all():
 
     return " | ".join(output)
 
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
