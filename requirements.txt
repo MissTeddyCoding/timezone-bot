@@ -1,2 +1,3 @@
 flask
 tzdata
+psycopg2-binary
